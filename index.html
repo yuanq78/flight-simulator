@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AeroSim X — 超写实飞行模拟器</title>
+  <link rel="stylesheet" href="./css/style.css" />
+  <script type="importmap">
+    { "imports": { "three": "./libs/three.module.js" } }
+  </script>
+</head>
+<body>
+  <!-- 3D 渲染画布 -->
+  <div id="viewport"></div>
+
+  <!-- HUD / 仪表覆盖层 -->
+  <canvas id="hud"></canvas>
+  <canvas id="minimap"></canvas>
+  <div id="vignette"></div>
+  <div id="cloudVeil"></div>
+
+  <!-- ===== 标题界面 ===== -->
+  <div class="overlay" id="titleScreen">
+    <div class="panel title-panel">
+      <h1 class="logo">AeroSim <span>X</span></h1>
+      <p class="subtitle">超写实飞行模拟器 · 6-DOF 气动模型 · 标准大气 · 程序化地形</p>
+      <div class="opt-grid">
+        <label>地形种子
+          <input type="number" id="optSeed" value="20240101" min="1" max="99999999" />
+        </label>
+        <label>当地时间 (Z)
+          <input type="range" id="optTime" min="0" max="24" step="0.25" value="9" />
+          <span class="opt-val" id="optTimeVal">09:00</span>
+        </label>
+        <label>天气
+          <div class="seg" id="optWeather">
+            <button data-w="clear" class="on">晴朗</button>
+            <button data-w="fair">少云</button>
+            <button data-w="overcast">阴天</button>
+            <button data-w="storm">雷暴</button>
+          </div>
+        </label>
+        <label>涂装
+          <div class="seg paints" id="optPaint">
+            <button data-p="0" class="on" style="--c:#e8edf2">白/蓝</button>
+            <button data-p="1" style="--c:#c0392b">红/白</button>
+            <button data-p="2" style="--c:#27ae60">绿/白</button>
+            <button data-p="3" style="--c:#f1c40f">黄/黑</button>
+          </div>
+        </label>
+        <label class="opt-check">
+          <input type="checkbox" id="optInvPitch" />
+          反转俯仰 <span class="opt-hint">勾选后 ↓=抬头（模拟“拉杆向后”手感）</span>
+        </label>
+      </div>
+      <button class="btn-primary big" id="startBtn">开始飞行</button>
+      <div class="hint">键盘 ←→↑↓ 驾驶 · W/S 油门 · F 襟翼 · G 起落架 · A/D 方向舵 · B 刹车<br/>
+      C 视角 · P 暂停 · H 帮助 · ` 遥测 · 支持手柄</div>
+    </div>
+  </div>
+
+  <!-- ===== 暂停菜单 ===== -->
+  <div class="overlay hidden" id="pauseMenu">
+    <div class="panel">
+      <h2>暂停</h2>
+      <button class="btn-primary" id="resumeBtn">继续飞行</button>
+      <button class="btn-secondary" id="restartBtn">重新开始 (R)</button>
+      <button class="btn-secondary" id="quitBtn">返回主菜单</button>
+      <div class="pause-opts">
+        <label>时间流速
+          <div class="seg" id="timeScale">
+            <button data-t="1" class="on">1×</button>
+            <button data-t="60">60×</button>
+            <button data-t="3600">3600×</button>
+          </div>
+        </label>
+        <label>天气
+          <div class="seg" id="pauseWeather">
+            <button data-w="clear">晴朗</button>
+            <button data-w="fair">少云</button>
+            <button data-w="overcast">阴天</button>
+            <button data-w="storm">雷暴</button>
+          </div>
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 坠毁界面 ===== -->
+  <div class="overlay hidden" id="crashScreen">
+    <div class="panel crash">
+      <h2 id="crashTitle">坠毁</h2>
+      <p id="crashMsg">飞机损毁。</p>
+      <p class="crash-stats" id="crashStats"></p>
+      <button class="btn-primary" id="retryBtn">重新起飞 (R)</button>
+      <button class="btn-secondary" id="crashQuitBtn">返回主菜单</button>
+    </div>
+  </div>
+
+  <!-- ===== 帮助 ===== -->
+  <div class="overlay hidden" id="helpScreen">
+    <div class="panel help">
+      <h2>操作说明</h2>
+      <table>
+        <tr><td>← →</td><td>副翼（横滚）</td><td>↑ ↓</td><td>升降舵（俯仰）</td></tr>
+        <tr><td>A / D</td><td>方向舵（偏航）</td><td>W / S</td><td>油门 + / −</td></tr>
+        <tr><td>F</td><td>襟翼（0 / 1 / 2 档）</td><td>G</td><td>起落架收放</td></tr>
+        <tr><td>B</td><td>刹车</td><td>T / Shift+T</td><td>俯仰配平 − / +</td></tr>
+        <tr><td>C</td><td>视角：追尾 / 座舱 / 环绕</td><td>P / Esc</td><td>暂停</td></tr>
+        <tr><td>M</td><td>静音</td><td>`</td><td>遥测面板</td></tr>
+        <tr><td>1 / 2 / 3</td><td>时间流速 1× / 60× / 3600×</td><td>R</td><td>重置飞行</td></tr>
+        <tr><td>鼠标</td><td>座舱/环绕视角中观察（点击画面锁定）</td><td>手柄</td><td>左摇杆驾驶 · RT/LT 油门</td></tr>
+      </table>
+      <p class="hint">起飞：油门加满，滑跑至 60 节后带杆。降落：对准跑道，襟翼 2 档，65 节进近，接地前拉平。</p>
+      <button class="btn-secondary" id="helpClose">关闭 (H)</button>
+    </div>
+  </div>
+
+  <!-- ===== 遥测面板 ===== -->
+  <div class="telemetry hidden" id="telemetry"></div>
+
+  <!-- 加载提示 -->
+  <div id="loading">
+    <div class="spinner"></div>
+    <p>正在生成地形…</p>
+    <div id="bootDiag" style="font-size:11px;margin-top:10px;color:#8b96a3;font-family:monospace;min-height:18px;text-align:left;white-space:pre-wrap;max-width:640px;"></div>
+  </div>
+  <script>
+    // 引导诊断：进度回传到服务器日志（GET /diag），并显示在启动页上（不清屏）
+    (function () {
+      var el = document.getElementById('loading');
+      var diagEl = document.getElementById('bootDiag');
+      var lastStep = '(尚未开始)';
+      function D(msg) {
+        window.__diagStep = msg;
+        var isPoll = msg.indexOf('等待中') === 0;
+        if (!isPoll) lastStep = msg;
+        if (diagEl) {
+          var mods = '';
+          try { mods = '  [' + Object.keys(window.__modLoaded || {}).map(function (k) { return (window.__modLoaded[k] ? '' : '!') + k; }).join(',') + ']'; } catch (e) {}
+          diagEl.textContent = (isPoll ? msg + '　最后步骤: ' + lastStep : msg) + mods;
+        }
+        try { fetch('/diag?m=' + encodeURIComponent(msg)); } catch (e) {}
+      }
+      window.__diag = D;
+      D('inline-ok');
+
+      // WebGL 可用性（终端级失败）
+      try {
+        var c = document.createElement('canvas');
+        var gl = c.getContext('webgl2') || c.getContext('webgl');
+        if (!gl) {
+          D('WEBGL-UNAVAILABLE');
+          el.innerHTML = '<p style="color:#ff6060;max-width:640px;white-space:pre-wrap;line-height:1.7;">⚠ 当前环境不支持 WebGL，无法渲染 3D 场景。\n请使用完整桌面浏览器（Chrome / Edge / Firefox）打开。</p>';
+          return;
+        }
+      } catch (err) {
+        D('WEBGL-ERROR: ' + err.message);
+        return;
+      }
+      D('webgl-ok');
+
+      // 模块/引导错误（立即回传服务器，页面上标红显示）
+      window.addEventListener('error', function (e) {
+        var stack = (e.error && e.error.stack) ? String(e.error.stack).split('\n').slice(0, 3).join(' | ') : '';
+        D('ERR ' + (e.message || '?') + ' @' + (e.filename || '') + ':' + (e.lineno || 0) + (stack ? ' » ' + stack : ''));
+        if (diagEl) diagEl.style.color = '#ff6060';
+      });
+      window.addEventListener('unhandledrejection', function (e) {
+        var r = e.reason;
+        D('REJ ' + ((r && r.message) || r) + (r && r.stack ? ' » ' + String(r.stack).split('\n').slice(0, 3).join(' | ') : ''));
+        if (diagEl) diagEl.style.color = '#ff6060';
+      });
+
+      // 轮询引导状态：不误报失败，直到主程序标记就绪
+      window.__aerosimBootTimer = setInterval(function () {
+        if (window.__aerosimReady) {
+          clearInterval(window.__aerosimBootTimer);
+          D('ready');
+          return;
+        }
+        D('等待中 ' + Math.round(performance.now() / 1000) + 's');
+      }, 2000);
+    })();
+  </script>
+
+  <script type="module" src="./js/main.js"></script>
+</body>
+</html>
